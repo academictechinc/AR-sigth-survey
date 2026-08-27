@@ -1,0 +1,797 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#0b1420">
+<title>AR Site Survey & Display Sizing</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="mobile-web-app-capable" content="yes">
+
+<style>
+  :root{
+    --bg:#0b1420; --bg-elev:#101d2c; --surface:#142234; --surface-2:#1b2c40;
+    --border:#24384f; --border-soft:rgba(140,160,179,0.16);
+    --text:#edf2f7; --text-dim:#8ca0b3; --text-faint:#5b7085;
+    --accent:#ff7a1a; --accent-soft:rgba(255,122,26,0.15);
+    --good:#7c8fa3; --best:#35d68a; --danger:#ff5470;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", "Consolas", monospace;
+  }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; background:var(--bg); color:var(--text); font-family:var(--font); overscroll-behavior:none; }
+  button{ font-family:inherit; }
+
+  /* ---------- Setup screen ---------- */
+  #setupScreen{ max-width:640px; margin:0 auto; padding:0 16px 40px; }
+  header.top{ padding:18px 0 8px; }
+  .brand-eyebrow{ font-size:10.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--accent); font-weight:700; margin:0 0 4px; }
+  h1.title{ font-size:20px; margin:0; font-weight:800; letter-spacing:-0.01em; }
+  .subtitle{ font-size:12.5px; color:var(--text-dim); margin-top:3px; }
+
+  section{ margin-top:22px; }
+  .section-label{ font-size:10.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--text-faint); font-weight:700; margin:0 0 10px; display:flex; align-items:center; gap:8px; }
+  .section-label::after{ content:""; flex:1; height:1px; background:var(--border-soft); }
+
+  .equip-grid{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; }
+  .equip-chip{ background:var(--surface); border:1px solid var(--border); color:var(--text); padding:14px 6px; border-radius:10px; font-size:12.5px; font-weight:700; text-align:center; cursor:pointer; }
+  .equip-chip .ic{ display:block; font-size:20px; margin-bottom:6px; }
+  .equip-chip.active{ border-color:var(--accent); background:var(--accent-soft); }
+
+  .field{ margin-top:12px; }
+  .field label{ display:block; font-size:10.5px; color:var(--text-faint); letter-spacing:.06em; text-transform:uppercase; margin-bottom:6px; }
+  .slider-row{ display:flex; align-items:center; gap:12px; }
+  .slider-row input[type=range]{ flex:1; accent-color:var(--accent); }
+  .slider-readout{ font-family:var(--font-mono); font-weight:700; font-size:14px; min-width:64px; text-align:right; }
+  .dims-row{ display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .field input[type=number]{ width:100%; background:var(--surface); border:1px solid var(--border); color:var(--text); font-size:16px; font-weight:700; font-family:var(--font-mono); padding:10px; border-radius:10px; }
+  .field input:focus{ outline:none; border-color:var(--accent); }
+
+  .toggle-row{ display:flex; align-items:center; justify-content:space-between; background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:11px 12px; margin-top:10px; }
+  .toggle-row .lbl{ font-size:12.5px; color:var(--text-dim); }
+  .switch{ position:relative; width:42px; height:24px; }
+  .switch input{ opacity:0; width:0; height:0; }
+  .switch-track{ position:absolute; inset:0; background:var(--surface-2); border:1px solid var(--border); border-radius:14px; transition:.15s; cursor:pointer; }
+  .switch-track::before{ content:""; position:absolute; width:16px; height:16px; left:3px; top:2px; background:var(--text-dim); border-radius:50%; transition:.15s; }
+  .switch input:checked + .switch-track{ background:var(--accent-soft); border-color:var(--accent); }
+  .switch input:checked + .switch-track::before{ transform:translateX(18px); background:var(--accent); }
+
+  .enter-btn{ margin-top:24px; width:100%; padding:15px; border-radius:12px; border:none; background:var(--accent); color:#1a0e04; font-weight:800; font-size:15px; cursor:pointer; }
+  .enter-btn:disabled{ background:var(--surface-2); color:var(--text-faint); }
+  .support-note{ margin-top:10px; font-size:11.5px; color:var(--text-faint); text-align:center; line-height:1.5; }
+  .support-note.warn{ color:var(--danger); }
+
+  .disclaimer{ margin-top:22px; font-size:11px; color:var(--text-faint); line-height:1.5; text-align:center; padding:0 8px; }
+
+  /* ---------- AR screen ---------- */
+  #arScreen{ position:fixed; inset:0; display:none; background:#000; }
+  #glCanvas{ position:absolute; inset:0; width:100%; height:100%; display:block; }
+  #arOverlay{ position:absolute; inset:0; pointer-events:none; }
+  #arOverlay .clickable{ pointer-events:auto; }
+
+  .ar-top-bar{ position:absolute; top:0; left:0; right:0; display:flex; justify-content:space-between; align-items:flex-start; padding:14px; padding-top:max(14px, env(safe-area-inset-top)); }
+  .light-badge{ background:rgba(11,20,32,0.78); border:1px solid var(--border); border-radius:20px; padding:7px 12px; font-size:11.5px; color:var(--text-dim); display:flex; align-items:center; gap:7px; backdrop-filter:blur(6px); }
+  .light-badge .dot{ width:7px; height:7px; border-radius:50%; background:var(--text-faint); }
+  .exit-btn{ background:rgba(11,20,32,0.78); border:1px solid var(--border); color:var(--text); width:38px; height:38px; border-radius:19px; display:flex; align-items:center; justify-content:center; backdrop-filter:blur(6px); }
+
+  .ar-hint{ position:absolute; top:64px; left:0; right:0; text-align:center; padding:0 24px; }
+  .ar-hint span{ background:rgba(11,20,32,0.78); border:1px solid var(--border); border-radius:10px; padding:8px 14px; font-size:12.5px; color:var(--text-dim); display:inline-block; backdrop-filter:blur(6px); }
+
+  .ar-sheet{ position:absolute; left:0; right:0; bottom:0; background:rgba(11,20,32,0.92); border-top:1px solid var(--border); border-radius:18px 18px 0 0; padding:14px 16px; padding-bottom:max(14px, env(safe-area-inset-bottom)); backdrop-filter:blur(10px); }
+  .ar-sheet .readout{ text-align:center; font-family:var(--font-mono); font-size:20px; font-weight:800; margin-bottom:10px; }
+  .ar-sheet .readout small{ display:block; font-family:var(--font); font-weight:600; font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--text-faint); margin-top:2px; }
+  .ar-slider-group{ margin-bottom:10px; }
+  .ar-slider-group label{ font-size:10.5px; color:var(--text-faint); letter-spacing:.06em; text-transform:uppercase; display:block; margin-bottom:5px; }
+  .ar-controls-row{ display:flex; gap:8px; margin-top:12px; }
+  .ar-controls-row button{ flex:1; padding:12px 8px; border-radius:10px; border:1px solid var(--border); background:var(--surface); color:var(--text); font-size:12px; font-weight:700; cursor:pointer; }
+  .ar-controls-row button.primary{ background:var(--accent); color:#1a0e04; border-color:var(--accent); }
+  .ar-controls-row button.on{ border-color:var(--best); background:rgba(53,214,138,0.12); color:var(--best); }
+
+  .screenshot-toast{ position:absolute; left:16px; right:16px; bottom:210px; background:rgba(53,214,138,0.14); border:1px solid var(--best); color:var(--best); padding:11px 14px; border-radius:10px; font-size:12.5px; text-align:center; opacity:0; transition:opacity .2s; pointer-events:none; }
+  .screenshot-toast.show{ opacity:1; }
+</style>
+</head>
+<body>
+
+<div id="setupScreen">
+  <header class="top">
+    <p class="brand-eyebrow">Field Estimator</p>
+    <h1 class="title">AR Site Survey</h1>
+    <p class="subtitle">Hold true-to-life equipment sizing up against the real room</p>
+  </header>
+
+  <section>
+    <p class="section-label">Equipment</p>
+    <div class="equip-grid" id="equipGrid">
+      <button class="equip-chip active" data-equip="panel"><span class="ic">▭</span>Flat Panel</button>
+      <button class="equip-chip" data-equip="screen"><span class="ic">⬜</span>Proj. Screen</button>
+      <button class="equip-chip" data-equip="speaker"><span class="ic">▤</span>Speaker Footprint</button>
+    </div>
+  </section>
+
+  <section id="panelSizeSection">
+    <p class="section-label">Starting size</p>
+    <div class="field">
+      <label id="diagLabel">Diagonal</label>
+      <div class="slider-row">
+        <input type="range" id="diagSlider" min="32" max="110" value="65" step="1">
+        <span class="slider-readout" id="diagReadout">65"</span>
+      </div>
+    </div>
+  </section>
+
+  <section id="speakerSizeSection" style="display:none;">
+    <p class="section-label">Footprint</p>
+    <div class="dims-row">
+      <div class="field">
+        <label>Width</label>
+        <div class="slider-row"><input type="range" id="spkWSlider" min="6" max="96" value="24" step="1"><span class="slider-readout" id="spkWReadout">24"</span></div>
+      </div>
+      <div class="field">
+        <label>Depth</label>
+        <div class="slider-row"><input type="range" id="spkDSlider" min="6" max="96" value="18" step="1"><span class="slider-readout" id="spkDReadout">18"</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="viewAngleSection">
+    <p class="section-label">Viewing angle overlay</p>
+    <div class="toggle-row">
+      <span class="lbl">Show coverage cone</span>
+      <label class="switch"><input type="checkbox" id="coneToggle" checked><span class="switch-track"></span></label>
+    </div>
+    <div class="field">
+      <label>Half-angle from center</label>
+      <div class="slider-row"><input type="range" id="angleSlider" min="15" max="75" value="45" step="1"><span class="slider-readout" id="angleReadout">45°</span></div>
+    </div>
+    <div class="field">
+      <label>Back-row distance</label>
+      <div class="slider-row"><input type="range" id="distSlider" min="5" max="100" value="20" step="1"><span class="slider-readout" id="distReadout">20 ft</span></div>
+    </div>
+  </section>
+
+  <button class="enter-btn" id="enterAR" disabled>Checking AR support…</button>
+  <p class="support-note" id="supportNote">Checking this device for AR support…</p>
+
+  <p class="disclaimer">Requires Chrome or Samsung Internet on an ARCore-compatible Android device. Placement accuracy depends on lighting and surface texture — verify final dimensions with a tape measure before quoting.</p>
+</div>
+
+<div id="arScreen">
+  <canvas id="glCanvas"></canvas>
+  <div id="arOverlay">
+    <div class="ar-top-bar">
+      <div class="light-badge clickable" id="lightBadge"><span class="dot" id="lightDot"></span><span id="lightText">Light: reading…</span></div>
+      <button class="exit-btn clickable" id="exitAR" aria-label="Exit AR">✕</button>
+    </div>
+    <div class="ar-hint" id="arHint"><span id="arHintText">Move your phone slowly to find a surface, then tap to place</span></div>
+    <div class="screenshot-toast" id="screenshotToast">Now use your phone's screenshot gesture (power + volume down) to save this view</div>
+    <div class="ar-sheet">
+      <div class="readout" id="arReadout">—<small id="arReadoutSub">tap a surface to place</small></div>
+      <div class="ar-slider-group" id="arSizeGroup">
+        <label id="arSizeLabel">Diagonal</label>
+        <input type="range" id="arSizeSlider" class="clickable" min="32" max="110" value="65" step="1">
+      </div>
+      <div class="ar-slider-group" id="arSpkWGroup" style="display:none;">
+        <label>Width</label>
+        <input type="range" id="arSpkWSlider" class="clickable" min="6" max="96" value="24" step="1">
+      </div>
+      <div class="ar-slider-group" id="arSpkDGroup" style="display:none;">
+        <label>Depth</label>
+        <input type="range" id="arSpkDSlider" class="clickable" min="6" max="96" value="18" step="1">
+      </div>
+      <div class="ar-controls-row">
+        <button class="clickable on" id="arConeBtn">Cone: On</button>
+        <button class="clickable" id="arReplaceHint">Tap surface to move</button>
+        <button class="clickable primary" id="arShot">Screenshot</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+"use strict";
+
+/* ============================================================
+   Math utilities (vec3 / mat4, column-major, no dependencies)
+   ============================================================ */
+function v3sub(a,b){ return [a[0]-b[0], a[1]-b[1], a[2]-b[2]]; }
+function v3add(a,b){ return [a[0]+b[0], a[1]+b[1], a[2]+b[2]]; }
+function v3scale(a,s){ return [a[0]*s, a[1]*s, a[2]*s]; }
+function v3cross(a,b){ return [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]]; }
+function v3dot(a,b){ return a[0]*b[0]+a[1]*b[1]+a[2]*b[2]; }
+function v3len(a){ return Math.sqrt(v3dot(a,a)); }
+function v3norm(a){ var l=v3len(a); return l<1e-6 ? [0,0,0] : [a[0]/l, a[1]/l, a[2]/l]; }
+
+// Build a column-major 4x4 from basis vectors (already scaled) + position.
+// col0=right, col1=up, col2=normal, col3=position
+function mat4FromBasis(right, up, normal, pos){
+  return new Float32Array([
+    right[0], right[1], right[2], 0,
+    up[0],    up[1],    up[2],    0,
+    normal[0],normal[1],normal[2],0,
+    pos[0],   pos[1],   pos[2],   1
+  ]);
+}
+function mat4Identity(){
+  return new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]);
+}
+// Extract translation (col3) from a column-major XRRigidTransform matrix
+function mat4GetTranslation(m){ return [m[12], m[13], m[14]]; }
+// Extract a basis column (0=right,1=up,2=fwd/normal) from a column-major matrix
+function mat4GetColumn(m, i){ return [m[i*4], m[i*4+1], m[i*4+2]]; }
+
+// Given a hit-test pose matrix, derive an orientation that:
+// - uses the pose's own Y-axis (surface normal) as facing direction
+// - keeps "up" aligned to world-up when possible (walls stand vertical)
+// - falls back to a horizontal basis for near-horizontal surfaces (floor/ceiling)
+function orientedBasisFromNormal(normal){
+  var worldUp = [0,1,0];
+  var right = v3cross(worldUp, normal);
+  if(v3len(right) < 0.02){
+    right = v3cross([0,0,1], normal);
+  }
+  right = v3norm(right);
+  var up = v3norm(v3cross(normal, right));
+  return { right:right, up:up, normal:v3norm(normal) };
+}
+
+/* ============================================================
+   Equipment / sizing model
+   ============================================================ */
+var IN_TO_M = 0.0254;
+function panelDimsFromDiagonalIn(diagIn){
+  // 16:9 aspect
+  var widthIn = diagIn * 0.8715;
+  var heightIn = diagIn * 0.4903;
+  return { wM: widthIn*IN_TO_M, hM: heightIn*IN_TO_M };
+}
+
+var state = {
+  equip: "panel",          // panel | screen | speaker
+  diagIn: 65,               // panel/screen
+  spkWIn: 24, spkDIn: 18,   // speaker footprint
+  coneOn: true,
+  angleDeg: 45,
+  backRowFt: 20
+};
+
+function currentDims(){
+  if(state.equip === "speaker"){
+    return { wM: state.spkWIn*IN_TO_M, hM: state.spkDIn*IN_TO_M };
+  }
+  return panelDimsFromDiagonalIn(state.diagIn);
+}
+
+/* ============================================================
+   Setup screen wiring
+   ============================================================ */
+var equipGrid = document.getElementById("equipGrid");
+var panelSizeSection = document.getElementById("panelSizeSection");
+var speakerSizeSection = document.getElementById("speakerSizeSection");
+var viewAngleSection = document.getElementById("viewAngleSection");
+var diagLabel = document.getElementById("diagLabel");
+var diagSlider = document.getElementById("diagSlider");
+var diagReadout = document.getElementById("diagReadout");
+var spkWSlider = document.getElementById("spkWSlider");
+var spkDSlider = document.getElementById("spkDSlider");
+var spkWReadout = document.getElementById("spkWReadout");
+var spkDReadout = document.getElementById("spkDReadout");
+var coneToggle = document.getElementById("coneToggle");
+var angleSlider = document.getElementById("angleSlider");
+var angleReadout = document.getElementById("angleReadout");
+var distSlider = document.getElementById("distSlider");
+var distReadout = document.getElementById("distReadout");
+
+function selectEquip(key){
+  state.equip = key;
+  Array.from(equipGrid.children).forEach(function(c){
+    c.classList.toggle("active", c.dataset.equip === key);
+  });
+  if(key === "speaker"){
+    panelSizeSection.style.display = "none";
+    speakerSizeSection.style.display = "";
+    viewAngleSection.style.display = "none";
+  } else {
+    panelSizeSection.style.display = "";
+    speakerSizeSection.style.display = "none";
+    viewAngleSection.style.display = "";
+    diagLabel.textContent = "Diagonal";
+    if(key === "screen"){
+      diagSlider.min = 60; diagSlider.max = 300;
+      if(state.diagIn < 60) { state.diagIn = 100; diagSlider.value = 100; }
+    } else {
+      diagSlider.min = 32; diagSlider.max = 110;
+      if(state.diagIn > 110) { state.diagIn = 65; diagSlider.value = 65; }
+    }
+    diagReadout.textContent = diagSlider.value + '"';
+  }
+  syncArControlsVisibility();
+}
+Array.from(equipGrid.children).forEach(function(chip){
+  chip.addEventListener("click", function(){ selectEquip(chip.dataset.equip); });
+});
+
+diagSlider.addEventListener("input", function(){
+  state.diagIn = Number(diagSlider.value);
+  diagReadout.textContent = state.diagIn + '"';
+  syncArSlidersFromState();
+});
+spkWSlider.addEventListener("input", function(){
+  state.spkWIn = Number(spkWSlider.value);
+  spkWReadout.textContent = state.spkWIn + '"';
+  syncArSlidersFromState();
+});
+spkDSlider.addEventListener("input", function(){
+  state.spkDIn = Number(spkDSlider.value);
+  spkDReadout.textContent = state.spkDIn + '"';
+  syncArSlidersFromState();
+});
+coneToggle.addEventListener("change", function(){
+  state.coneOn = coneToggle.checked;
+  updateConeButton();
+});
+angleSlider.addEventListener("input", function(){
+  state.angleDeg = Number(angleSlider.value);
+  angleReadout.textContent = state.angleDeg + "°";
+});
+distSlider.addEventListener("input", function(){
+  state.backRowFt = Number(distSlider.value);
+  distReadout.textContent = state.backRowFt + " ft";
+});
+
+/* ============================================================
+   AR support check
+   ============================================================ */
+var enterARBtn = document.getElementById("enterAR");
+var supportNote = document.getElementById("supportNote");
+var xrSupported = false;
+
+function checkSupport(){
+  if(!navigator.xr){
+    supportNote.textContent = "WebXR isn't available in this browser. Open this page in Chrome or Samsung Internet on an ARCore-compatible Android phone.";
+    supportNote.classList.add("warn");
+    enterARBtn.textContent = "AR not available";
+    return;
+  }
+  navigator.xr.isSessionSupported("immersive-ar").then(function(supported){
+    xrSupported = supported;
+    if(supported){
+      enterARBtn.disabled = false;
+      enterARBtn.textContent = "Start AR Placement";
+      supportNote.textContent = "AR ready on this device.";
+      supportNote.classList.remove("warn");
+    } else {
+      enterARBtn.textContent = "AR not supported on this device";
+      supportNote.textContent = "This device or browser doesn't support immersive AR. Google's ARCore app may need to be installed or updated.";
+      supportNote.classList.add("warn");
+    }
+  }).catch(function(){
+    enterARBtn.textContent = "AR not supported on this device";
+    supportNote.textContent = "Couldn't verify AR support on this device.";
+    supportNote.classList.add("warn");
+  });
+}
+checkSupport();
+
+/* ============================================================
+   WebGL setup
+   ============================================================ */
+var canvas = document.getElementById("glCanvas");
+var gl = null;
+var glProgram = null;
+var uModelLoc, uViewLoc, uProjLoc, uColorLoc, aPositionLoc;
+var quadBuffer, ringBuffer, lineBuffer;
+var RING_SEGMENTS = 32;
+
+function initGL(){
+  gl = canvas.getContext("webgl", { antialias:true, alpha:true, xrCompatible:true });
+  var vsSrc = "attribute vec3 aPosition; uniform mat4 uModel; uniform mat4 uView; uniform mat4 uProj; void main(){ gl_Position = uProj * uView * uModel * vec4(aPosition,1.0); }";
+  var fsSrc = "precision mediump float; uniform vec4 uColor; void main(){ gl_FragColor = uColor; }";
+
+  function compile(type, src){
+    var s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    if(!gl.getShaderParameter(s, gl.COMPILE_STATUS)){
+      console.error(gl.getShaderInfoLog(s));
+    }
+    return s;
+  }
+  var vs = compile(gl.VERTEX_SHADER, vsSrc);
+  var fs = compile(gl.FRAGMENT_SHADER, fsSrc);
+  glProgram = gl.createProgram();
+  gl.attachShader(glProgram, vs);
+  gl.attachShader(glProgram, fs);
+  gl.linkProgram(glProgram);
+  gl.useProgram(glProgram);
+
+  aPositionLoc = gl.getAttribLocation(glProgram, "aPosition");
+  uModelLoc = gl.getUniformLocation(glProgram, "uModel");
+  uViewLoc = gl.getUniformLocation(glProgram, "uView");
+  uProjLoc = gl.getUniformLocation(glProgram, "uProj");
+  uColorLoc = gl.getUniformLocation(glProgram, "uColor");
+
+  // Unit quad, centered, local XY plane (-0.5..0.5)
+  var quadVerts = new Float32Array([
+    -0.5,-0.5,0,  0.5,-0.5,0,  0.5,0.5,0,
+    -0.5,-0.5,0,  0.5,0.5,0,  -0.5,0.5,0
+  ]);
+  quadBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, quadVerts, gl.STATIC_DRAW);
+
+  // Unit circle ring, radius 0.5, local XY plane
+  var ringVerts = [];
+  for(var i=0;i<RING_SEGMENTS;i++){
+    var a = (i/RING_SEGMENTS) * Math.PI*2;
+    ringVerts.push(Math.cos(a)*0.5, Math.sin(a)*0.5, 0);
+  }
+  ringBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, ringBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(ringVerts), gl.STATIC_DRAW);
+
+  // Dynamic line buffer (2 points), used for cone lines & outline redraw
+  lineBuffer = gl.createBuffer();
+
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+}
+
+function drawBuffer(buffer, mode, count, model, view, proj, color){
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+  gl.enableVertexAttribArray(aPositionLoc);
+  gl.vertexAttribPointer(aPositionLoc, 3, gl.FLOAT, false, 0, 0);
+  gl.uniformMatrix4fv(uModelLoc, false, model);
+  gl.uniformMatrix4fv(uViewLoc, false, view);
+  gl.uniformMatrix4fv(uProjLoc, false, proj);
+  gl.uniform4fv(uColorLoc, color);
+  gl.drawArrays(mode, 0, count);
+}
+
+function drawWorldLine(p0, p1, view, proj, color){
+  gl.bindBuffer(gl.ARRAY_BUFFER, lineBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([p0[0],p0[1],p0[2], p1[0],p1[1],p1[2]]), gl.DYNAMIC_DRAW);
+  gl.enableVertexAttribArray(aPositionLoc);
+  gl.vertexAttribPointer(aPositionLoc, 3, gl.FLOAT, false, 0, 0);
+  gl.uniformMatrix4fv(uModelLoc, false, mat4Identity());
+  gl.uniformMatrix4fv(uViewLoc, false, view);
+  gl.uniformMatrix4fv(uProjLoc, false, proj);
+  gl.uniform4fv(uColorLoc, color);
+  gl.drawArrays(gl.LINES, 0, 2);
+}
+
+/* ============================================================
+   WebXR session management
+   ============================================================ */
+var xrSession = null;
+var xrRefSpace = null;      // 'local'
+var xrViewerSpace = null;   // 'viewer', for hit-test source
+var hitTestSource = null;
+var lightProbe = null;
+
+var placed = false;
+var placedPos = null, placedRight = null, placedUp = null, placedNormal = null;
+var reticlePos = null, reticleRight = null, reticleUp = null, reticleNormal = null;
+var reticleValid = false;
+
+var arScreen = document.getElementById("arScreen");
+var setupScreen = document.getElementById("setupScreen");
+var lightText = document.getElementById("lightText");
+var lightDot = document.getElementById("lightDot");
+var arReadout = document.getElementById("arReadout");
+var arReadoutSub = document.getElementById("arReadoutSub");
+var arHint = document.getElementById("arHint");
+var arHintText = document.getElementById("arHintText");
+var arSizeGroup = document.getElementById("arSizeGroup");
+var arSizeLabel = document.getElementById("arSizeLabel");
+var arSizeSlider = document.getElementById("arSizeSlider");
+var arSpkWGroup = document.getElementById("arSpkWGroup");
+var arSpkDGroup = document.getElementById("arSpkDGroup");
+var arSpkWSlider = document.getElementById("arSpkWSlider");
+var arSpkDSlider = document.getElementById("arSpkDSlider");
+var arConeBtn = document.getElementById("arConeBtn");
+var screenshotToast = document.getElementById("screenshotToast");
+
+function syncArControlsVisibility(){
+  if(state.equip === "speaker"){
+    arSizeGroup.style.display = "none";
+    arSpkWGroup.style.display = "";
+    arSpkDGroup.style.display = "";
+    arConeBtn.style.display = "none";
+  } else {
+    arSizeGroup.style.display = "";
+    arSpkWGroup.style.display = "none";
+    arSpkDGroup.style.display = "none";
+    arConeBtn.style.display = "";
+    arSizeLabel.textContent = "Diagonal";
+    arSizeSlider.min = diagSlider.min; arSizeSlider.max = diagSlider.max;
+  }
+}
+function syncArSlidersFromState(){
+  arSizeSlider.value = state.diagIn;
+  arSpkWSlider.value = state.spkWIn;
+  arSpkDSlider.value = state.spkDIn;
+  updateReadout();
+}
+arSizeSlider.addEventListener("input", function(){
+  state.diagIn = Number(arSizeSlider.value);
+  diagSlider.value = state.diagIn; diagReadout.textContent = state.diagIn + '"';
+  updateReadout();
+});
+arSpkWSlider.addEventListener("input", function(){
+  state.spkWIn = Number(arSpkWSlider.value);
+  spkWSlider.value = state.spkWIn; spkWReadout.textContent = state.spkWIn + '"';
+  updateReadout();
+});
+arSpkDSlider.addEventListener("input", function(){
+  state.spkDIn = Number(arSpkDSlider.value);
+  spkDSlider.value = state.spkDIn; spkDReadout.textContent = state.spkDIn + '"';
+  updateReadout();
+});
+
+function updateConeButton(){
+  arConeBtn.textContent = "Cone: " + (state.coneOn ? "On" : "Off");
+  arConeBtn.classList.toggle("on", state.coneOn);
+}
+document.getElementById("arConeBtn").addEventListener("click", function(){
+  state.coneOn = !state.coneOn;
+  coneToggle.checked = state.coneOn;
+  updateConeButton();
+});
+
+function updateReadout(){
+  if(!placed){
+    arReadout.innerHTML = "—<small>tap a surface to place</small>";
+    return;
+  }
+  if(state.equip === "speaker"){
+    arReadout.innerHTML = state.spkWIn + '" × ' + state.spkDIn + '"<small>footprint (W × D)</small>';
+  } else {
+    var kind = state.equip === "screen" ? "projection screen" : "flat panel";
+    arReadout.innerHTML = state.diagIn + '"<small>diagonal ' + kind + '</small>';
+  }
+}
+
+document.getElementById("enterAR").addEventListener("click", function(){
+  if(!xrSupported) return;
+  startAR();
+});
+document.getElementById("exitAR").addEventListener("click", function(){
+  if(xrSession) xrSession.end();
+});
+document.getElementById("arShot").addEventListener("click", function(){
+  screenshotToast.classList.add("show");
+  setTimeout(function(){ screenshotToast.classList.remove("show"); }, 3200);
+});
+
+function startAR(){
+  if(!gl) initGL();
+  syncArControlsVisibility();
+  syncArSlidersFromState();
+  updateConeButton();
+
+  var sessionInit = {
+    requiredFeatures: ["hit-test"],
+    optionalFeatures: ["dom-overlay", "light-estimation"],
+    domOverlay: { root: document.getElementById("arOverlay") }
+  };
+
+  navigator.xr.requestSession("immersive-ar", sessionInit).then(function(session){
+    xrSession = session;
+    setupScreen.style.display = "none";
+    arScreen.style.display = "block";
+    placed = false;
+    updateReadout();
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    session.updateRenderState({ baseLayer: new XRWebGLLayer(session, gl) });
+
+    Promise.all([
+      session.requestReferenceSpace("local"),
+      session.requestReferenceSpace("viewer")
+    ]).then(function(spaces){
+      xrRefSpace = spaces[0];
+      xrViewerSpace = spaces[1];
+      session.requestHitTestSource({ space: xrViewerSpace }).then(function(src){
+        hitTestSource = src;
+      });
+    });
+
+    // Light estimation (optional — may be unavailable on some devices/browsers)
+    if(session.enabledFeatures && session.enabledFeatures.indexOf && session.enabledFeatures.indexOf("light-estimation") === -1){
+      lightText.textContent = "Light estimate unavailable";
+    }
+    try{
+      session.requestLightProbe().then(function(probe){
+        lightProbe = probe;
+      }).catch(function(){
+        lightText.textContent = "Light estimate unavailable";
+      });
+    }catch(e){
+      lightText.textContent = "Light estimate unavailable";
+    }
+
+    session.addEventListener("select", onSelect);
+    session.addEventListener("end", onSessionEnd);
+    session.requestAnimationFrame(onXRFrame);
+  }).catch(function(err){
+    console.error("Failed to start AR session", err);
+    supportNote.textContent = "Couldn't start AR: " + (err && err.message ? err.message : "unknown error");
+    supportNote.classList.add("warn");
+  });
+}
+
+function onSelect(){
+  if(reticleValid){
+    placedPos = reticlePos;
+    placedRight = reticleRight;
+    placedUp = reticleUp;
+    placedNormal = reticleNormal;
+    placed = true;
+    arHint.style.display = "none";
+    updateReadout();
+  }
+}
+
+function onSessionEnd(){
+  xrSession = null;
+  hitTestSource = null;
+  lightProbe = null;
+  placed = false;
+  arScreen.style.display = "none";
+  setupScreen.style.display = "block";
+  arHint.style.display = "block";
+  arHintText.textContent = "Move your phone slowly to find a surface, then tap to place";
+}
+
+/* Rough qualitative mapping from WebXR light estimate intensity to a label.
+   This is a relative brightness reading from the AR light estimate API,
+   not a calibrated lux meter. */
+function describeLight(intensity){
+  // intensity is roughly 0..1+ scale (can exceed 1 in bright scenes)
+  if(intensity < 0.15) return { label:"Low light", color:"var(--danger)" };
+  if(intensity < 0.4)  return { label:"Dim", color:"var(--text-dim)" };
+  if(intensity < 0.75) return { label:"Moderate", color:"var(--good)" };
+  if(intensity < 1.1)  return { label:"Bright", color:"var(--best)" };
+  return { label:"Very bright", color:"var(--best)" };
+}
+
+function onXRFrame(time, frame){
+  var session = frame.session;
+  session.requestAnimationFrame(onXRFrame);
+
+  var pose = frame.getViewerPose(xrRefSpace);
+  if(!pose) return;
+
+  var glLayer = session.renderState.baseLayer;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, glLayer.framebuffer);
+  gl.clearColor(0,0,0,0);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+  // Light estimate
+  if(lightProbe){
+    try{
+      var estimate = frame.getLightEstimate(lightProbe);
+      if(estimate){
+        var i = estimate.primaryLightIntensity;
+        var mag = i ? Math.sqrt(i.x*i.x + i.y*i.y + i.z*i.z) : 0;
+        var d = describeLight(mag);
+        lightText.textContent = "Light: " + d.label;
+        lightDot.style.background = d.color;
+      }
+    }catch(e){ /* light estimation not available this frame */ }
+  }
+
+  // Hit test -> reticle
+  reticleValid = false;
+  if(hitTestSource && !placed){
+    var results = frame.getHitTestResults(hitTestSource);
+    if(results.length > 0){
+      var hitPose = results[0].getPose(xrRefSpace);
+      if(hitPose){
+        var m = hitPose.transform.matrix;
+        var pos = mat4GetTranslation(m);
+        var normal = mat4GetColumn(m, 1); // WebXR hit poses: Y axis = surface normal
+        var basis = orientedBasisFromNormal(normal);
+        reticlePos = pos; reticleRight = basis.right; reticleUp = basis.up; reticleNormal = basis.normal;
+        reticleValid = true;
+        arHintText.textContent = "Tap to place";
+      }
+    } else {
+      arHintText.textContent = "Move your phone slowly to find a surface";
+    }
+  }
+
+  for(var vi=0; vi<pose.views.length; vi++){
+    var view = pose.views[vi];
+    var viewport = glLayer.getViewport(view);
+    gl.viewport(viewport.x, viewport.y, viewport.width, viewport.height);
+    var projMat = view.projectionMatrix;
+    var viewMat = view.transform.inverse.matrix;
+
+    if(placed){
+      var dims = currentDims();
+      var model = mat4FromBasis(
+        v3scale(placedRight, dims.wM),
+        v3scale(placedUp, dims.hM),
+        placedNormal,
+        placedPos
+      );
+      // filled rect (translucent)
+      drawBuffer(quadBuffer, gl.TRIANGLES, 6, model, viewMat, projMat, [0.14,0.65,0.95,0.28]);
+      // outline
+      drawOutline(model, viewMat, projMat, [1.0,0.478,0.102,0.95]);
+
+      // viewing angle cone (panel/screen only)
+      if(state.equip !== "speaker" && state.coneOn){
+        var lenM = state.backRowFt * 0.3048;
+        var rad = state.angleDeg * Math.PI/180;
+        var dir1 = v3norm(v3add(v3scale(placedNormal, Math.cos(rad)), v3scale(placedRight, Math.sin(rad))));
+        var dir2 = v3norm(v3add(v3scale(placedNormal, Math.cos(rad)), v3scale(placedRight, -Math.sin(rad))));
+        var p1 = v3add(placedPos, v3scale(dir1, lenM));
+        var p2 = v3add(placedPos, v3scale(dir2, lenM));
+        drawWorldLine(placedPos, p1, viewMat, projMat, [0.21,0.84,0.54,0.85]);
+        drawWorldLine(placedPos, p2, viewMat, projMat, [0.21,0.84,0.54,0.85]);
+        var pc = v3add(placedPos, v3scale(placedNormal, lenM));
+        drawWorldLine(p1, pc, viewMat, projMat, [0.21,0.84,0.54,0.4]);
+        drawWorldLine(p2, pc, viewMat, projMat, [0.21,0.84,0.54,0.4]);
+      }
+    } else if(reticleValid){
+      var rmodel = mat4FromBasis(
+        v3scale(reticleRight, 0.3),
+        v3scale(reticleUp, 0.3),
+        reticleNormal,
+        reticlePos
+      );
+      drawBuffer(ringBuffer, gl.LINE_LOOP, RING_SEGMENTS, rmodel, viewMat, projMat, [1,1,1,0.9]);
+    }
+  }
+}
+
+function drawOutline(model, view, proj, color){
+  gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
+  // reuse quad verts but as LINE_LOOP over the 4 unique corners (skip the duplicated diagonal verts)
+  var outlineVerts = new Float32Array([
+    -0.5,-0.5,0,  0.5,-0.5,0,  0.5,0.5,0,  -0.5,0.5,0
+  ]);
+  gl.bufferData(gl.ARRAY_BUFFER, outlineVerts, gl.DYNAMIC_DRAW);
+  gl.enableVertexAttribArray(aPositionLoc);
+  gl.vertexAttribPointer(aPositionLoc, 3, gl.FLOAT, false, 0, 0);
+  gl.uniformMatrix4fv(uModelLoc, false, model);
+  gl.uniformMatrix4fv(uViewLoc, false, view);
+  gl.uniformMatrix4fv(uProjLoc, false, proj);
+  gl.uniform4fv(uColorLoc, color);
+  gl.drawArrays(gl.LINE_LOOP, 0, 4);
+  // restore quad buffer for subsequent fills
+  gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+    -0.5,-0.5,0,  0.5,-0.5,0,  0.5,0.5,0,
+    -0.5,-0.5,0,  0.5,0.5,0,  -0.5,0.5,0
+  ]), gl.STATIC_DRAW);
+}
+
+/* ============================================================
+   Service worker
+   ============================================================ */
+if("serviceWorker" in navigator){
+  window.addEventListener("load", function(){
+    navigator.serviceWorker.register("sw.js").catch(function(){});
+  });
+}
+
+/* expose for automated logic testing (harmless in production) */
+if(typeof window !== "undefined"){
+  window.__arSurveyInternals = {
+    v3sub:v3sub, v3add:v3add, v3scale:v3scale, v3cross:v3cross, v3dot:v3dot, v3len:v3len, v3norm:v3norm,
+    mat4FromBasis:mat4FromBasis, orientedBasisFromNormal:orientedBasisFromNormal,
+    panelDimsFromDiagonalIn:panelDimsFromDiagonalIn, mat4GetTranslation:mat4GetTranslation, mat4GetColumn:mat4GetColumn
+  };
+}
+
+})();
+</script>
+</body>
+</html>

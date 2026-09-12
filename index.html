@@ -572,38 +572,51 @@ function startAR(){
   syncArControlsVisibility();
   syncArSlidersFromState();
   updateConeButton();
+  enterARBtn.disabled = true;
+  enterARBtn.textContent = "Starting AR…";
+  supportNote.classList.remove("warn");
+  supportNote.textContent = "Requesting camera access…";
 
+  // dom-overlay is required, not optional: if a device can't grant it, we want
+  // requestSession() itself to fail immediately (caught below) rather than
+  // entering a fullscreen AR view with no on-screen controls ever rendered.
   var sessionInit = {
-    requiredFeatures: ["hit-test"],
-    optionalFeatures: ["dom-overlay", "light-estimation"],
+    requiredFeatures: ["hit-test", "dom-overlay"],
+    optionalFeatures: ["light-estimation"],
     domOverlay: { root: document.getElementById("arOverlay") }
   };
 
-  navigator.xr.requestSession("immersive-ar", sessionInit).then(function(session){
+  var session = null;
+
+  navigator.xr.requestSession("immersive-ar", sessionInit).then(function(s){
+    session = s;
     xrSession = session;
+    session.addEventListener("end", onSessionEnd);
+
+    // Some browsers honor xrCompatible at context-creation time; others only
+    // via this explicit async call. Do both for reliability.
+    return gl.makeXRCompatible();
+  }).then(function(){
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    session.updateRenderState({ baseLayer: new XRWebGLLayer(session, gl) });
+    return Promise.all([
+      session.requestReferenceSpace("local"),
+      session.requestReferenceSpace("viewer")
+    ]);
+  }).then(function(spaces){
+    xrRefSpace = spaces[0];
+    xrViewerSpace = spaces[1];
+    return session.requestHitTestSource({ space: xrViewerSpace });
+  }).then(function(src){
+    hitTestSource = src;
+
+    // Everything critical succeeded — now, and only now, switch screens.
     setupScreen.style.display = "none";
     arScreen.style.display = "block";
     placed = false;
     updateReadout();
+    lightText.textContent = "Light: reading…";
 
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    session.updateRenderState({ baseLayer: new XRWebGLLayer(session, gl) });
-
-    Promise.all([
-      session.requestReferenceSpace("local"),
-      session.requestReferenceSpace("viewer")
-    ]).then(function(spaces){
-      xrRefSpace = spaces[0];
-      xrViewerSpace = spaces[1];
-      session.requestHitTestSource({ space: xrViewerSpace }).then(function(src){
-        hitTestSource = src;
-      });
-    });
-
-    // Light estimation (optional — may be unavailable on some devices/browsers)
-    if(session.enabledFeatures && session.enabledFeatures.indexOf && session.enabledFeatures.indexOf("light-estimation") === -1){
-      lightText.textContent = "Light estimate unavailable";
-    }
     try{
       session.requestLightProbe().then(function(probe){
         lightProbe = probe;
@@ -615,12 +628,16 @@ function startAR(){
     }
 
     session.addEventListener("select", onSelect);
-    session.addEventListener("end", onSessionEnd);
     session.requestAnimationFrame(onXRFrame);
   }).catch(function(err){
     console.error("Failed to start AR session", err);
-    supportNote.textContent = "Couldn't start AR: " + (err && err.message ? err.message : "unknown error");
+    enterARBtn.disabled = false;
+    enterARBtn.textContent = "Start AR Placement";
+    supportNote.textContent = "Couldn't start AR: " + (err && err.message ? err.message : "unknown error") + ". Try again, or make sure Google Play Services for AR is installed and up to date.";
     supportNote.classList.add("warn");
+    if(session){
+      session.end().catch(function(){});
+    }
   });
 }
 
@@ -638,6 +655,8 @@ function onSelect(){
 
 function onSessionEnd(){
   xrSession = null;
+  xrRefSpace = null;
+  xrViewerSpace = null;
   hitTestSource = null;
   lightProbe = null;
   placed = false;
@@ -645,6 +664,8 @@ function onSessionEnd(){
   setupScreen.style.display = "block";
   arHint.style.display = "block";
   arHintText.textContent = "Move your phone slowly to find a surface, then tap to place";
+  enterARBtn.disabled = !xrSupported;
+  enterARBtn.textContent = xrSupported ? "Start AR Placement" : "AR not supported on this device";
 }
 
 /* Rough qualitative mapping from WebXR light estimate intensity to a label.
@@ -663,10 +684,17 @@ function onXRFrame(time, frame){
   var session = frame.session;
   session.requestAnimationFrame(onXRFrame);
 
+  // Guard against a frame landing before reference spaces resolve, or after
+  // the session has already ended.
+  if(!xrRefSpace || !session) return;
+
   var pose = frame.getViewerPose(xrRefSpace);
   if(!pose) return;
 
   var glLayer = session.renderState.baseLayer;
+  if(!glLayer) return;
+
+  try{
   gl.bindFramebuffer(gl.FRAMEBUFFER, glLayer.framebuffer);
   gl.clearColor(0,0,0,0);
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -748,6 +776,10 @@ function onXRFrame(time, frame){
       );
       drawBuffer(ringBuffer, gl.LINE_LOOP, RING_SEGMENTS, rmodel, viewMat, projMat, [1,1,1,0.9]);
     }
+  }
+  }catch(err){
+    // A single bad frame shouldn't take down the session — log and keep going.
+    console.error("AR frame render error", err);
   }
 }
 

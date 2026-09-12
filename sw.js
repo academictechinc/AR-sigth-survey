@@ -1,6 +1,6 @@
 // Bump CACHE_NAME on every deployed update (e.g. v2, v3...).
 // Users must fully close and reopen the installed app to pick up the new version.
-const CACHE_NAME = "ar-survey-v1";
+const CACHE_NAME = "ar-survey-v2";
 
 const ASSETS = [
   "./",
